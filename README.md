@@ -6,7 +6,7 @@ The Email Validation API allows you to verify if an email address is valid by in
 
 ## Base URL
 
-http://<your-server-domain>/api/email
+http://localhost:9000/api/email
 
 ## Endpoint
 
