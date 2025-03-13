@@ -182,3 +182,107 @@ const validateEmail = async (email) => {
 
 validateEmail('example@example.com');
 ```
+
+## Bulk Email Validation API Documentation
+
+### Overview
+
+This API allows users to upload a CSV or TXT file containing email addresses for bulk processing. Once uploaded, the file is stored on Google Drive and processed asynchronously. The processing validates each email (by calling an external API using a proxy with retries) and writes the results to a new CSV file on Drive. WebSocket updates are sent as each email is processed. Finally, the raw file is deleted from Drive, and the processed file URL is stored in the job record.
+
+### Endpoints
+
+#### 1. POST `/api/email/file/bulk`
+
+**Description:**  
+Uploads a file containing email addresses to process them in bulk. The file is immediately uploaded to Google Drive and a job record is created. The API returns a jobId for tracking.
+
+**Request Headers:**
+
+- **Content-Type:** `multipart/form-data`
+
+**Request Body:**
+
+- **file (file):** A CSV or TXT file containing email addresses.
+
+**Example cURL Request:**
+
+```sh
+curl -X POST http://<your-server-domain>/api/email/file/bulk \
+  -F "file=@path/to/your/file.csv"
+```
+
+**Example Response:**
+
+```json
+{
+  "jobId": "123e4567-e89b-12d3-a456-426614174000",
+  "status": "IN_PROGRESS"
+}
+```
+
+#### 2. GET `/api/email/file/status/{jobId}`
+
+**Description:**  
+Retrieves the current status of the bulk processing job by its jobId.
+
+**Response:**
+
+```json
+{
+  "jobId": "123e4567-e89b-12d3-a456-426614174000",
+  "progress": 50,
+  "status": "IN_PROGRESS",
+  "message": "Processed 50 of 100 emails"
+}
+```
+
+- **jobId:** The unique identifier of the bulk job.
+- **progress:** Completion percentage (0–100).
+- **status:** Current status (e.g., IN_PROGRESS, COMPLETED, FAILED).
+- **message:** A descriptive message about the progress.
+
+#### 3. GET `/api/email/file/download/{jobId}`
+
+**Description:**  
+If the bulk processing job is completed, this endpoint redirects (HTTP 302) to the processed CSV file's public URL on Google Drive.
+
+**Response:**  
+A 302 Redirect with the Location header pointing to the processed file URL.
+
+### Processing Flow
+
+Below is a Mermaid diagram illustrating the step-by-step flow for bulk processing:
+
+```mermaid
+flowchart TD
+    A[User uploads CSV/TXT file via UI] --> B[UI sends POST to /api/email/file/bulk]
+    B --> C[API creates BulkJob record in DB and uploads raw file to Google Drive]
+    C --> D[Job record updated with raw file info]
+    D --> E[Asynchronous processing starts]
+    E --> F[Download raw file from Drive to count total lines]
+    F --> G[Download raw file again for processing]
+    G --> H[Submit each non-empty line for external email validation concurrently]
+    H --> I[Collect each email's result and write to temporary CSV file on disk]
+    I --> J[Update job progress in DB and send WebSocket update after each email]
+    J --> K[Upload processed CSV file from disk to Google Drive]
+    K --> L[Update BulkJob record with processed CSV URL]
+    L --> M[Delete raw file from Google Drive]
+    M --> N[UI polls for job status then calls GET /download/{jobId} to redirect to file]
+```
+
+### Additional Considerations
+
+**Large File Handling:**  
+The solution streams file data (using BufferedReader) to avoid loading the entire file into memory. Processed results are written directly to a temporary CSV file on disk (which is deleted after upload). In production, if files are extremely large (e.g., 10 million records), you may consider using Spring Batch for partitioned, fault-tolerant processing.
+
+**Concurrency & Throttling:**  
+The current design uses a fixed thread pool (e.g., 10 threads) to validate emails concurrently. Adjust THREAD_POOL_SIZE as needed based on your hardware and expected load.
+
+**Error Handling & Retries:**  
+Each email validation call uses a retry mechanism (up to 3 attempts) with proxy support to improve robustness.
+
+**WebSocket Updates:**  
+The system sends a WebSocket update for every email processed (or each completed task) so the UI always gets the latest progress.
+
+**Google Drive Storage:**  
+The raw file is stored on Google Drive at upload time, then processed CSV is uploaded after validation, and finally, the raw file is deleted to free up space.
