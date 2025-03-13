@@ -255,19 +255,21 @@ Below is a Mermaid diagram illustrating the step-by-step flow for bulk processin
 
 ```mermaid
 flowchart TD
-    A[User uploads CSV/TXT file via UI] --> B[UI sends POST to /api/email/file/bulk]
-    B --> C[API creates BulkJob record in DB and uploads raw file to Google Drive]
-    C --> D[Job record updated with raw file info]
-    D --> E[Asynchronous processing starts]
-    E --> F[Download raw file from Drive to count total lines]
-    F --> G[Download raw file again for processing]
-    G --> H[Submit each non-empty line for external email validation concurrently]
-    H --> I[Collect each email's result and write to temporary CSV file on disk]
-    I --> J[Update job progress in DB and send WebSocket update after each email]
-    J --> K[Upload processed CSV file from disk to Google Drive]
-    K --> L[Update BulkJob record with processed CSV URL]
-    L --> M[Delete raw file from Google Drive]
-    M --> N[UI polls for job status then calls GET /download/{jobId} to redirect to file]
+    A[User uploads CSV/TXT file via UI] --> B[UI sends POST request to /api/email/file/bulk]
+    B --> C[API receives file and creates job record in DB]
+    C --> D[Upload raw file to Google Drive]
+    D --> E[Job record updated with raw file info]
+    E --> F[Async processing starts]
+    F --> G[Download raw file from Drive to count total lines]
+    G --> H[Download raw file again for processing]
+    H --> I[Submit each non-empty line for external email validation]
+    I --> J[Collect result for each email]
+    J --> K[Write result: email - Valid/Invalid to temp CSV file]
+    K --> L[Update job progress in DB and send WebSocket update]
+    L --> M[Upload processed CSV file to Google Drive]
+    M --> N[Update job record with processed CSV URL]
+    N --> O[Delete raw file from Google Drive]
+    O --> P[UI polls for job status then downloads CSV via 302 redirect]
 ```
 
 ### Additional Considerations
